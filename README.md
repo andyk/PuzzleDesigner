@@ -13,8 +13,8 @@ The idea is to codify some of the real esape rooms we've done.
 In escape rooms, puzzles in various forms (e.g. find a hidden object, solve a riddle, decode a cipher)
 are used as keys to locked spaces, which in turn often contain a key (or part of a composite key) for
 other locked spaces. Sometimes locked spaces contain other smaller locked spaces (for some definition
-of smaller). It seems we should be able to capture these dependencies into an architecture 
-and reason about their properties.
+of smaller). It seems we should be able to capture these dependencies into an architecture or data
+structure -- e.g. maybe a directed graph -- and reason about their properties.
 
 The goal of this architectural API is to help us reason about what makes a puzzle a puzzle, how do
 the various related concepts (e.g., locks, keys, riddles, puzzles, solutions, ciphers, etc.)
