@@ -16,8 +16,8 @@ other locked spaces. Sometimes locked spaces contain other smaller locked spaces
 of smaller). It seems we should be able to capture these dependencies into an architecture or data
 structure -- e.g. maybe a directed graph -- and reason about their properties.
 
-The goal of this architectural API is to help us reason about what makes a puzzle a puzzle, how do
-the various related concepts (e.g., locks, keys, riddles, puzzles, solutions, ciphers, etc.)
+The goal of this architectural API is to help us reason about what makes a puzzle a puzzle, and how
+various associated concepts (e.g., locks, keys, riddles, puzzles, solutions, ciphers, etc.)
 all relate to each other.
 
 Can we ultimately create a data structure that captures sophisticated layered/nested DAGs of puzzles. 
