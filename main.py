@@ -1,9 +1,9 @@
-"""PuzzleDesigner is an API for creating complex pluzzles, with a focus on escape rooms."""
+"""PuzzleDesigner is an API for creating complex puzzles, with a focus on escape rooms."""
 
 class Space:
-    """ A Space can be inspected to potentially yield discoveries. A discovery is another Space.
-    Spaces can represent non-physical items (information) or physical items, like a lock, key,
-    chair, etc.
+    """ A Space can be inspected to potentially yield discoveries. A discovery is usually another
+    Space. Spaces can represent non-physical items (information) or physical items, like a lock,
+    key, chair, etc.
 
     This is intended to be a logical space, which is more general than a strict 3D Euclidean space,
     but should suffice to represent physical space and its contents, in that it can both
