@@ -1,5 +1,7 @@
 """PuzzleDesigner is an API for creating complex puzzles, with a focus on escape rooms."""
 
+from graphviz import Digraph
+
 class Space:
     """ A Space can be inspected to potentially yield discoveries. A discovery is usually another
     Space. Spaces can represent non-physical items (information) or physical items, like a lock,
@@ -12,8 +14,8 @@ class Space:
     def __init__(self, description, contents=[], inspect_handler=None, interactive_mode=False):
         """
         :param description: Text that describes this space (this can hint at discoveries)
-        :param contents: list of things, e.g., other Spaces, contained by this space
-            which can potentially be discovered (via the `inspect()` function which uses
+        :param contents: list of other Spaces contained by this space which can
+            potentially be discovered (via the `inspect()` function which uses
             the inspect_handler param).
         :param inspect_handler: A function that takes an intention and contents of this space and
             returns a list of zero or more discoveries (each discovery can be another Space)
@@ -21,7 +23,10 @@ class Space:
         """
         self.description = description
         if contents:
-            assert isinstance(contents, list)
+            if not isinstance(contents, list):
+                contents = [contents]
+            for c in contents:
+                assert isinstance(c, Space), "contents obj should be of type Space, not {0}".format(type(c))
         self._contents = contents
         if inspect_handler:
             self.inspect_handler = inspect_handler
@@ -44,6 +49,35 @@ class Space:
             else:
                 print("You don't discover anything")
         return discoveries
+
+    def save_dag_file(self, filename):
+        """Save a file representing the DAG associated with this Space."""
+        self.generate_dag().render(filename, view=True)
+
+    def generate_dag(self, graph=None):
+        """return a dot representation of the DAG associated with this Space
+        that will start at this space and have edges to any spaces that it
+        contains by calling generate_dag on it's contents, and then recursing."""
+        def get_shape(space_element):
+            if isinstance(space_element, LockedSpace):
+                return "doubleoctagon"
+            elif isinstance(space_element, Key):
+                return "trapezium"
+            else:
+                return "octagon"
+
+        if graph:
+            for child in self._contents:
+                graph.node(child.description, shape=get_shape(child))
+                graph.edge(self.description, child.description)
+                child.generate_dag(graph)
+                if isinstance(child, Key):
+                    graph.edge(child.description, child.lock.description)
+            return graph
+        else:
+            new_graph = Digraph(comment='DAG of Puzzle Space')
+            new_graph.node(self.description, shape=get_shape(self))
+            return self.generate_dag(new_graph)
 
     def __repr__(self):
         return self.description
@@ -88,11 +122,8 @@ class Lock:
         return self.unlocked
 
 
-class SpaceIsLocked(Exception):
-    pass
-
 class LockedSpace(Space, Lock):
-    def __init__(self, description, contents, key_test, interactive_mode=False):
+    def __init__(self, description, contents, key, key_test, interactive_mode=False):
         """
         A Space with a Lock on it that prevents access to its contents when locked.
         When unlocked, that can contain arbitrary contents.
@@ -111,14 +142,18 @@ class LockedSpace(Space, Lock):
                        contents,
                        inspect_handler=lambda i, c: None if self.locked else contents,
                        interactive_mode=interactive_mode)
+        self._key = key
+        key.lock = self
 
     def inspect(self, intention=None):
         return Space.inspect(self, intention) if self.unlocked else None
 
 
-class Key:
-    def __init__(self, description):
-        self.description = description
+class Key(Space):
+    def __init__(self, description, lock=None):
+        """Lock is an optional value to track the thing that this key unlocks."""
+        Space.__init__(self, description)
+        self.lock = lock
 
     def __repr__(self):
         return "a key in the shape of {0}".format(self.description)
@@ -177,6 +212,7 @@ def setup_escape_room_example():
     exit_door = LockedSpace(
         description="A door that looks like an exit.",
         contents=[Space("Freedom into the outside world")],
+        key=final_key,
         key_test=lambda k: True if k == final_key else False,
         interactive_mode=True)
 
@@ -190,16 +226,17 @@ def setup_escape_room_example():
 def play_escape_room_example(room):
     print("\nPlaying our example escape room...")
     discoveries = room.inspect("look around")
-    exit = discoveries[0]
+    exit_door = discoveries[0]
     room_key = discoveries[1]
-    print("the door {0}".format("is locked" if exit.locked else "is unlocked"))
-    exit.contents  # This is a convenience wrapper around inspect()
-    exit.unlock(room_key)
-    print("the door {0}".format("is locked" if exit.locked else "is unlocked"))
-    exit.inspect("look at exit door")
+    print("the door {0}".format("is locked" if exit_door.locked else "is unlocked"))
+    exit_door.contents  # This is a convenience wrapper around inspect()
+    exit_door.unlock(room_key)
+    print("the door {0}".format("is locked" if exit_door.locked else "is unlocked"))
+    exit_door.inspect("look at exit door")
 
 if __name__ == "__main__":
     riddle_example()
 
     room = setup_escape_room_example()
+    room.save_dag_file("example_dag.gv")
     play_escape_room_example(room)

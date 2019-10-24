@@ -2,7 +2,12 @@
 An API for designing puzzles, with a focus on escape rooms as a type of puzzle.
 
 ## Installing/running
-So far, this only requires Python. I use a conda env for dev (but that isn't a dependency yet).
+Python 3 is required for core API.
+An installation of graphviz is required to generate figures of puzzle DAGs.
+I use a conda env for dev (but that isn't a dependency yet).
+
+### Instructions for MacOS:
+* Install Graphviz via Homebrew: `brew install graphviz`
 * git checkout and `cd` into the repo
 * run `$ python main.py` at your command line
 
