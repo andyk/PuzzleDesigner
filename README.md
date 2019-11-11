@@ -1,3 +1,7 @@
+# Spoiler Alert
+The code in this repository models a real escape room in Los Angeles called Perfumer.
+It contains spoilers about the puzzles in that room.
+
 # PuzzleDesigner
 An API for designing puzzles, with a focus on escape rooms as a type of puzzle.
 

@@ -59,7 +59,7 @@ class Space:
         that will start at this space and have edges to any spaces that it
         contains by calling generate_dag on it's contents, and then recursing."""
         def get_shape(space_element):
-            if isinstance(space_element, LockedSpace):
+            if isinstance(space_element, Door):
                 return "doubleoctagon"
             elif isinstance(space_element, Key):
                 return "trapezium"
@@ -70,9 +70,13 @@ class Space:
             for child in self._contents:
                 graph.node(child.description, shape=get_shape(child))
                 graph.edge(self.description, child.description)
+                print(self.description)
                 child.generate_dag(graph)
                 if isinstance(child, Key):
-                    graph.edge(child.description, child.lock.description)
+                    if child.lock:
+                        graph.edge(child.description, child.lock.description)
+            #TODO: Add a way to visualize composite keys/artifacts correctlyin the DAG
+            #for parent in self._parents:
             return graph
         else:
             new_graph = Digraph(comment='DAG of Puzzle Space')
@@ -81,6 +85,31 @@ class Space:
 
     def __repr__(self):
         return self.description
+
+
+class Room(Space):
+    def __init__(self, description, contents=[], inspect_handler=None, interactive_mode=False):
+        Space.__init__(self, description, contents, inspect_handler, interactive_mode)
+
+
+class Artifact(Space):
+    """A physical thing in the world that has properties."""
+    def __init__(self, description, contents=[], inspect_handler=None, interactive_mode=False):
+        Space.__init__(self, description, contents, inspect_handler, interactive_mode)
+
+    def __repr__(self):
+        return "an artifact, {0}".format(self.description)
+
+
+class Key(Artifact):
+    def __init__(self, description, contents=[], inspect_handler=None, interactive_mode=False, lock=None):
+        """Lock is an optional value to track the lock that this artifact unlocks."""
+        Artifact.__init__(self, description, contents, inspect_handler, interactive_mode)
+        self.lock = lock
+
+    def __repr__(self):
+        return "a key in the shape of {0}".format(self.description)
+
 
 class Lock:
     """A Lock is a thing that can be `unlock()`ed by being provided with a correct key.
@@ -121,42 +150,44 @@ class Lock:
             print("unlock failed")
         return self.unlocked
 
+class AssembledArtifact(Lock, Artifact):
+    """"A lock that is unlocked when the necessary parts are present"""
 
-class LockedSpace(Space, Lock):
-    def __init__(self, description, contents, key, key_test, interactive_mode=False):
+    def __init__(self, description, parts, key=None, key_test=None, interactive_mode=False):
+        """:param parts: a list of other artifacts that were assembled into this one."""
+        assert isinstance(parts, list)
+        Lock.__init__(self, key_test, interactive_mode)
+        Artifact.__init__(self, description, contents=parts)
+
+
+class Door(Space, Lock):
+    def __init__(self, description, space, key=None, key_test=None, interactive_mode=False):
         """
-        A Space with a Lock on it that prevents access to its contents when locked.
-        When unlocked, that can contain arbitrary contents.
-
-        When this space is locked, the inspect function returns None. If the lock
+        A Door with a Lock on it that prevents access to space behind it when locked.
+        A door always has exactly 1 item in its contents, that is its space.
+        When unlocked, can be opened to return a new space that can be explored.
+        When locked, the inspect function returns None.
 
         :param description: see definition of Space.
-        :param contents: Space to be returned if this LockedSpace is unlocked.
+        :param space: Space to be returned if this Door is unlocked.
         :param key_test: Function that takes a key and returns True if the key unlocks
             the contents of this object, else False.
         :param interactive_mode: Flag for printing narrative text.
         """
+        self.description = description
+        if not key_test:
+            if key:
+                def key_test(x): return x is key
+            else:
+                raise Exception("at least one of key and key_test required.")
         Lock.__init__(self, key_test, interactive_mode)
-        Space.__init__(self,
-                       description,
-                       contents,
-                       inspect_handler=lambda i, c: None if self.locked else contents,
-                       interactive_mode=interactive_mode)
+        Space.__init__(self, description, contents=[space])
         self._key = key
-        key.lock = self
+        if key:
+            key.lock = self
 
-    def inspect(self, intention=None):
-        return Space.inspect(self, intention) if self.unlocked else None
-
-
-class Key(Space):
-    def __init__(self, description, lock=None):
-        """Lock is an optional value to track the thing that this key unlocks."""
-        Space.__init__(self, description)
-        self.lock = lock
-
-    def __repr__(self):
-        return "a key in the shape of {0}".format(self.description)
+    def open(self):
+        return self.space if self.unlocked else None
 
 
 # Demonstrate how to compose some primitive classes to represent a riddle.
@@ -186,7 +217,7 @@ class Riddle(Space):
 # Example Usages
 #########################
 
-###############
+
 def riddle_example():
     riddle = Riddle(prompt="I have 2 hands but can't grasp things. What am I?",
                     solution_test=lambda x: True if x.lower().find("clock") == 0 else False)
@@ -209,19 +240,54 @@ def setup_escape_room_example():
     final_key = Key("bottle of ultimate perfume")
 
     # Create the final locked door that will need to be unlocked to exit the escape room.
-    exit_door = LockedSpace(
-        description="A door that looks like an exit.",
-        contents=[Space("Freedom into the outside world")],
+    exit_door = Door(
+        description="a door that looks like an exit.",
+        space=Space("freedom into the outside world"),
         key=final_key,
         key_test=lambda k: True if k == final_key else False,
         interactive_mode=True)
 
-    # Create the main room that you start in and have to escape from.
-    perfumer_room = Space(description="main lair",
-                          contents=[exit_door, final_key],
-                          interactive_mode=True)  # Room contains two items.
+    # The overall escape experience consists of 5 different rooms that solvers progress through.
+    room_5 = Space(description="room 5 - a slide and an empty room that the slide leads into",
+                   contents=[exit_door],
+                   interactive_mode=True)  # Room contains two items.
+    room_5_key = Key("room 5 key")
+    room_5_door = Door("large tank that you can stand in", space=room_5, key=room_5_key)
+    room_4 = Room("room 4 - Library", contents=[room_5_door, final_key], interactive_mode=True)
+    room_4_key = Key("room 4 key")
+    room_4_door = Door("Door to room 4 - door with keyhole", space=room_4, key=room_4_key)
+    room_3 = Room("room 3 - woman room", contents=[room_4_door])
+    room_3_key = Key("room 3 key")
+    room_3_door = Door("Door to room 3 - hole in wall covered by planks", space=room_3, key=room_3_key)
+    room_2 = Room("room 2 - basement", contents=[room_3_door])
 
-    return perfumer_room
+    ##### Contents of Room 1 #####
+    key_handle = Artifact("A key with no teeth but a cylinder where teeth would normally be")
+    small_compartment = Space("small compartment", contents=key_handle)
+    door_to_small_compartment = Door("door to small compartment",
+                                     space=small_compartment,
+                                     key_test=lambda x: x.contains("slide"))
+    chair_arm = Artifact("arm of chair", contents=door_to_small_compartment)
+    chair = Artifact(description="chair with arms", contents=chair_arm)
+    counter = Artifact("counter")
+    scent_1 = Space("smell 1 - smell of flowers")
+    key_tine_1 = Key("small piece of metal, rectangular with hollow hole on one end")
+    perfume_bottle = Artifact("perfume bottle 1", contents=[scent_1, key_tine_1])
+    cabinet = Space("cabinet", contents=[perfume_bottle])
+    cabinet_key = Key("cabinet key")
+    cabinet_door = Door("cabinet door", space=cabinet, key=cabinet_key)
+    room_2_key = Key("assembled room 2 key")
+    # TODO: add a way to representing assembling something as a special type of Door
+    #       that returns an assembled artifact that visualizes in the DAG correctly
+    #room_2_key = AssembledKey("assembled room 2 key", parents=[key_tine_1, key_handle])
+    #room_2_key_assemble_lock = Lock(lambda k: room_2_key in k.contents and key_handle in k.contents)
+    room_2_door = Door("door to room 2 - door with keyhole",
+                       space=room_2,
+                       key=room_2_key,
+                       key_test=lambda k: room_2_key in k.contents and key_handle in k.contents)
+    # TODO: add 3 other perfume bottles hidden around room 1
+    room_1 = Room("Room 1 - storefront", contents=[room_2_door, chair, counter, cabinet_door, cabinet_key])
+    return room_1
 
 def play_escape_room_example(room):
     print("\nPlaying our example escape room...")
@@ -232,7 +298,7 @@ def play_escape_room_example(room):
     exit_door.contents  # This is a convenience wrapper around inspect()
     exit_door.unlock(room_key)
     print("the door {0}".format("is locked" if exit_door.locked else "is unlocked"))
-    exit_door.inspect("look at exit door")
+    exit_door.open()
 
 if __name__ == "__main__":
     riddle_example()
