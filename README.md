@@ -23,7 +23,7 @@ In escape rooms, puzzles in various forms (e.g. find a hidden object, solve a ri
 are used as keys to locked spaces, which in turn often contain a key (or part of a composite key) for
 other locked spaces. Sometimes locked spaces contain other smaller locked spaces (for some definition
 of smaller). It seems we should be able to capture these dependencies into an architecture or data
-structure -- e.g. maybe a directed graph -- and reason about their properties.
+structure -- e.g. a directed graph -- and reason about their properties.
 
 The goal of this architectural API is to help us reason about what makes a puzzle a puzzle, and how
 various associated concepts (e.g., locks, keys, riddles, puzzles, solutions, ciphers, etc.)
@@ -36,3 +36,7 @@ rooms that are enjoyable and challenging but balanced?
 This includes understanding and capturing the design constraints of puzzles and escape rooms, including
 the puzzle difficulty and balance, potential parallelism for teams working together, hint systems,
 and how to associate story-telling components (characters, back-story, plot, etc.) with puzzles.
+
+A longer term goal is to extend the tools beyond reasoning about systems of puzzles that
+need to be solved to **problems** which needs to be solved and **tasks** that need to
+be completed.

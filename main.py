@@ -1,24 +1,52 @@
 """PuzzleDesigner is an API for creating complex puzzles, with a focus on escape rooms."""
 
 from graphviz import Digraph
+from collections import defaultdict
 
-class Space:
-    """ A Space can be inspected to potentially yield discoveries. A discovery is usually another
-    Space. Spaces can represent non-physical items (information) or physical items, like a lock,
+
+class Graph:
+    """Utility class."""
+    def __init__(self):
+        self.nodes = set()
+        self.edges = defaultdict(set)
+
+
+class Thing:
+    """ A Thing can be inspected to potentially yield discoveries. A discovery is usually another
+    Thing. Things can represent non-physical items (information) or physical items, like a lock,
     key, chair, etc.
 
-    This is intended to be a logical space, which is more general than a strict 3D Euclidean space,
-    but should suffice to represent physical space and its contents, in that it can both
-    represent and contain physical things."""
+    This is intended to be a logical thing, which is more general than a strict 3D Euclidean thing,
+    but should suffice to represent physical thing and its contents, in that it can both
+    represent and contain physical things.
 
-    def __init__(self, description, contents=[], inspect_handler=None, interactive_mode=False):
+    We track a Thing's `parts` and `contents` separately, even though they are
+    related concepts. This is a bit nuanced. Conceptually, composition of
+    things has a time/dependency component to. We differentiate the two concepts below:
+
+    *A Thing's `contents`*
+    ThingA can have contents which represent other things (e.g. ThingB)
+    that can only be discovered after ThingA has been discovered. For example,
+    a room must be discovered before the table inside of it can be discovered.
+    The dependency (i.e. logical ordering in the DAG) in this case is: thingB depends on
+    (is a child of) its container (thingA).
+
+    *A Thing's `parts`*
+    On the other hand a thing can be combined with other things to build a composite thing.
+    If thing2 is built by combining thing1 with other things, then the the logical ordering of events
+    is that you need to have thing1 before you can build thing2, so the dependency (logical ordering)
+    in that case is: thing2 (composite item) depends on (is a child of) its 'parts` (including thing1)
+    """
+
+    def __init__(self, description, contents=[], parts=[], inspect_handler=None, interactive_mode=False):
         """
-        :param description: Text that describes this space (this can hint at discoveries)
-        :param contents: list of other Spaces contained by this space which can
+        :param description: Text that describes this thing (this can hint at discoveries)
+        :param contents: list of other Things contained by this Thing which can
             potentially be discovered (via the `inspect()` function which uses
             the inspect_handler param).
-        :param inspect_handler: A function that takes an intention and contents of this space and
-            returns a list of zero or more discoveries (each discovery can be another Space)
+        :param parts: list of other Things that are composed of this thing
+        :param inspect_handler: A function that takes an intention and contents of this thing and
+            returns a list of zero or more discoveries (each discovery can be another Thing)
         :param interactive_mode: Flag for printing narrative text.
         """
         self.description = description
@@ -26,20 +54,31 @@ class Space:
             if not isinstance(contents, list):
                 contents = [contents]
             for c in contents:
-                assert isinstance(c, Space), "contents obj should be of type Space, not {0}".format(type(c))
+                assert isinstance(c, Thing), "contents obj should be of type Thing, not {0}".format(type(c))
         self._contents = contents
+
+        # We track the other things self is `part_of` *and* its sub-`parts`
+        self.part_of = set()  # Other composite things that this Thing is a part of.
+        for part in parts:
+            assert isinstance(part, Thing)
+            part.part_of.add(self)  # add a link from the constituent parts to this Thing.
+        self.parts = parts
+        if not isinstance(parts, list):
+            self.parts = [parts]
+
         if inspect_handler:
             self.inspect_handler = inspect_handler
         else:
             self.inspect_handler = lambda intention, conts: conts  # Return all contents
         self.interactive_mode = interactive_mode
 
+
     @property
     def contents(self):
         return self.inspect()
 
     def inspect(self, intention=None):
-        """Handles an intention to inspect within a Space. Calls the inspect_handler function."""
+        """Handles an intention to inspect within a Thing. Calls the inspect_handler function."""
         discoveries = self.inspect_handler(intention, self._contents)
         if self.interactive_mode:
             print("You {0}.".format(intention or "inspect"))
@@ -51,60 +90,73 @@ class Space:
         return discoveries
 
     def save_dag_file(self, filename):
-        """Save a file representing the DAG associated with this Space."""
-        self.generate_dag().render(filename, view=True)
-
-    def generate_dag(self, graph=None):
-        """return a dot representation of the DAG associated with this Space
-        that will start at this space and have edges to any spaces that it
-        contains by calling generate_dag on it's contents, and then recursing."""
-        def get_shape(space_element):
-            if isinstance(space_element, Door):
+        """Save a file representing the DAG associated with this Thing."""
+        def get_shape(thing_element):
+            if isinstance(thing_element, Door):
                 return "doubleoctagon"
-            elif isinstance(space_element, Key):
-                return "trapezium"
+            elif isinstance(thing_element, Key):
+                return "oval"
             else:
                 return "octagon"
 
+        gv_graph = Digraph(comment='DAG of Puzzle Thing')
+        g = self.generate_dag()  # get back a Graph object
+        for node in g.nodes:
+            gv_graph.node(node.description, shape=get_shape(node))
+        for parent, children in g.edges.items():
+            for child in children:
+                gv_graph.edge(parent.description, child.description)
+        gv_graph.render(filename, view=True)
+        print("rendered graph")
+
+    def generate_dag(self, graph=None):
+        """return a dot representation of the DAG associated with this Thing
+        that will start at this thing and have edges to any things that it
+        contains by calling generate_dag on its contents, and then recursing."""
+
         if graph:
             for child in self._contents:
-                graph.node(child.description, shape=get_shape(child))
-                graph.edge(self.description, child.description)
-                print(self.description)
-                child.generate_dag(graph)
+                graph.nodes.add(child)
+                graph.edges[self].add(child)
                 if isinstance(child, Key):
                     if child.lock:
-                        graph.edge(child.description, child.lock.description)
-            #TODO: Add a way to visualize composite keys/artifacts correctlyin the DAG
-            #for parent in self._parents:
+                        graph.edges[child].add(child.lock)
+                child.generate_dag(graph)  # recursive call
+            for part_of_obj in self.part_of:
+                graph.nodes.add(part_of_obj)
+                graph.edges[self].add(part_of_obj)
+                if isinstance(part_of_obj, Key):
+                    if part_of_obj.lock:
+                        graph.edges[part_of_obj].add(part_of_obj.lock)
+                part_of_obj.generate_dag(graph)  # recursive call
             return graph
         else:
-            new_graph = Digraph(comment='DAG of Puzzle Space')
-            new_graph.node(self.description, shape=get_shape(self))
-            return self.generate_dag(new_graph)
+            g = Graph()
+            g.nodes.add(self)
+            return self.generate_dag(g)
 
     def __repr__(self):
         return self.description
 
 
-class Room(Space):
-    def __init__(self, description, contents=[], inspect_handler=None, interactive_mode=False):
-        Space.__init__(self, description, contents, inspect_handler, interactive_mode)
+class Room(Thing):
+    def __init__(self, description, contents=[], parts=[], inspect_handler=None, interactive_mode=False):
+        Thing.__init__(self, description, contents, parts, inspect_handler, interactive_mode)
 
 
-class Artifact(Space):
+class PhysicalThing(Thing):
     """A physical thing in the world that has properties."""
-    def __init__(self, description, contents=[], inspect_handler=None, interactive_mode=False):
-        Space.__init__(self, description, contents, inspect_handler, interactive_mode)
+    def __init__(self, description, contents=[], parts=[], inspect_handler=None, interactive_mode=False):
+        Thing.__init__(self, description, contents, parts, inspect_handler, interactive_mode)
 
     def __repr__(self):
-        return "an artifact, {0}".format(self.description)
+        return "a physical thing, {0}".format(self.description)
 
 
-class Key(Artifact):
-    def __init__(self, description, contents=[], inspect_handler=None, interactive_mode=False, lock=None):
+class Key(PhysicalThing):
+    def __init__(self, description, contents=[], parts=[], inspect_handler=None, interactive_mode=False, lock=None):
         """Lock is an optional value to track the lock that this artifact unlocks."""
-        Artifact.__init__(self, description, contents, inspect_handler, interactive_mode)
+        PhysicalThing.__init__(self, description, contents, parts, inspect_handler, interactive_mode)
         self.lock = lock
 
     def __repr__(self):
@@ -112,8 +164,8 @@ class Key(Artifact):
 
 
 class Lock:
-    """A Lock is a thing that can be `unlock()`ed by being provided with a correct key.
-    A lock can be applied to a space to keep the contents unavailable till the key is provided.
+    """A Lock can be `unlock()`ed by being provided with a correct key.
+    A lock can be applied to a thing to keep the contents unavailable till the key is provided.
     A puzzle can be thought of a specific type (or instance) of lock. A puzzle has a solution
     like a lock has a key.
 
@@ -150,26 +202,17 @@ class Lock:
             print("unlock failed")
         return self.unlocked
 
-class AssembledArtifact(Lock, Artifact):
-    """"A lock that is unlocked when the necessary parts are present"""
 
-    def __init__(self, description, parts, key=None, key_test=None, interactive_mode=False):
-        """:param parts: a list of other artifacts that were assembled into this one."""
-        assert isinstance(parts, list)
-        Lock.__init__(self, key_test, interactive_mode)
-        Artifact.__init__(self, description, contents=parts)
-
-
-class Door(Space, Lock):
-    def __init__(self, description, space, key=None, key_test=None, interactive_mode=False):
+class Door(Thing, Lock):
+    def __init__(self, description, thing_behind_door, key=None, key_test=None, interactive_mode=False):
         """
-        A Door with a Lock on it that prevents access to space behind it when locked.
-        A door always has exactly 1 item in its contents, that is its space.
-        When unlocked, can be opened to return a new space that can be explored.
+        A Door with a Lock on it that prevents access to thing behind it when locked.
+        A door always has exactly 1 item in its contents, that is its thing.
+        When unlocked, can be opened to return a new thing that can be explored.
         When locked, the inspect function returns None.
 
-        :param description: see definition of Space.
-        :param space: Space to be returned if this Door is unlocked.
+        :param description: see definition of Thing.
+        :param thing: Thing to be returned if this Door is unlocked.
         :param key_test: Function that takes a key and returns True if the key unlocks
             the contents of this object, else False.
         :param interactive_mode: Flag for printing narrative text.
@@ -181,18 +224,18 @@ class Door(Space, Lock):
             else:
                 raise Exception("at least one of key and key_test required.")
         Lock.__init__(self, key_test, interactive_mode)
-        Space.__init__(self, description, contents=[space])
+        Thing.__init__(self, description, contents=[thing_behind_door])
         self._key = key
         if key:
             key.lock = self
 
     def open(self):
-        return self.space if self.unlocked else None
+        return self.contents[0] if self.unlocked else None
 
 
 # Demonstrate how to compose some primitive classes to represent a riddle.
-class Riddle(Space):
-    # A riddle is a Space who's whose description is a prompt and contents are success.
+class Riddle(Thing):
+    # A riddle is a Thing who's whose description is a prompt and contents are success.
     # A riddle contains a Lock whose key is the riddle's solution. The lock is used to
     # test potential solutions and, for a correct solution, provide the contents, which
     # are success, which manifest as printing and returning a string that says "success".
@@ -228,7 +271,7 @@ def riddle_example():
     print("testing solution 'clock': {0}".format(riddle.solve("clock")))
 
 ###############
-# An escape room is a Locked Space (the space outside of the room is what's locked in this case).
+# An escape room is a Locked Thing (the thing outside of the room is what's locked in this case).
 def setup_escape_room_example():
     print("\nSetting up a simple single-room escape room...")
 
@@ -236,58 +279,66 @@ def setup_escape_room_example():
     # Goal of this escape room is to enter a serial killer's lair, find his priceless perfume, and
     # escape before the before police arrive.
 
-    # Create the keys that will be used to lock our spaces.
+    # Create the keys that will be used to lock our things.
     final_key = Key("bottle of ultimate perfume")
 
     # Create the final locked door that will need to be unlocked to exit the escape room.
     exit_door = Door(
         description="a door that looks like an exit.",
-        space=Space("freedom into the outside world"),
+        thing_behind_door=Thing("freedom into the outside world"),
         key=final_key,
         key_test=lambda k: True if k == final_key else False,
         interactive_mode=True)
 
     # The overall escape experience consists of 5 different rooms that solvers progress through.
-    room_5 = Space(description="room 5 - a slide and an empty room that the slide leads into",
+    room_5 = Thing(description="room 5 - a slide leads into an empty room",
                    contents=[exit_door],
                    interactive_mode=True)  # Room contains two items.
     room_5_key = Key("room 5 key")
-    room_5_door = Door("large tank that you can stand in", space=room_5, key=room_5_key)
-    room_4 = Room("room 4 - Library", contents=[room_5_door, final_key], interactive_mode=True)
+    room_5_door = Door("large tank that you can stand in", thing_behind_door=room_5, key=room_5_key)
+    room_4 = Room("room 4 - Library", contents=[room_5_door, room_5_key, final_key], interactive_mode=True)
     room_4_key = Key("room 4 key")
-    room_4_door = Door("Door to room 4 - door with keyhole", space=room_4, key=room_4_key)
-    room_3 = Room("room 3 - woman room", contents=[room_4_door])
+    room_4_door = Door("Door to room 4 - door with keyhole", thing_behind_door=room_4, key=room_4_key)
+    room_3 = Room("room 3 - woman room", contents=[room_4_door, room_4_key])
     room_3_key = Key("room 3 key")
-    room_3_door = Door("Door to room 3 - hole in wall covered by planks", space=room_3, key=room_3_key)
-    room_2 = Room("room 2 - basement", contents=[room_3_door])
+    room_3_door = Door("Door to room 3 - hole in wall covered by planks", thing_behind_door=room_3, key=room_3_key)
+    room_2 = Room("room 2 - basement", contents=[room_3_door, room_3_key])
 
     ##### Contents of Room 1 #####
-    key_handle = Artifact("A key with no teeth but a cylinder where teeth would normally be")
-    small_compartment = Space("small compartment", contents=key_handle)
+    key_handle = PhysicalThing("key handle with no teeth")
+    small_compartment = Thing("small compartment", contents=key_handle)
     door_to_small_compartment = Door("door to small compartment",
-                                     space=small_compartment,
+                                     thing_behind_door=small_compartment,
                                      key_test=lambda x: x.contains("slide"))
-    chair_arm = Artifact("arm of chair", contents=door_to_small_compartment)
-    chair = Artifact(description="chair with arms", contents=chair_arm)
-    counter = Artifact("counter")
-    scent_1 = Space("smell 1 - smell of flowers")
-    key_tine_1 = Key("small piece of metal, rectangular with hollow hole on one end")
-    perfume_bottle = Artifact("perfume bottle 1", contents=[scent_1, key_tine_1])
-    cabinet = Space("cabinet", contents=[perfume_bottle])
+    chair_arm = PhysicalThing("arm of chair", contents=door_to_small_compartment)
+    chair = PhysicalThing(description="chair with arms", contents=chair_arm)
+    # Different bottles hidden around room 1
+    scents = []
+    key_tines = []
+    perfume_bottles = []
+    for i in range(5):
+        scents.append(Thing("scent {0} - smell of flowers".format(i)))
+        key_tines.append(Key("small piece of metal {0}, hole on end".format(i)))
+        perfume_bottles.append(PhysicalThing("perfume bottle {0}".format(i), contents=[scents[i], key_tines[i]]))
+
+    # Bottle 0 in cabinet
+    cabinet = PhysicalThing("cabinet", contents=[perfume_bottles[0]])
     cabinet_key = Key("cabinet key")
-    cabinet_door = Door("cabinet door", space=cabinet, key=cabinet_key)
-    room_2_key = Key("assembled room 2 key")
-    # TODO: add a way to representing assembling something as a special type of Door
-    #       that returns an assembled artifact that visualizes in the DAG correctly
-    #room_2_key = AssembledKey("assembled room 2 key", parents=[key_tine_1, key_handle])
-    #room_2_key_assemble_lock = Lock(lambda k: room_2_key in k.contents and key_handle in k.contents)
+    cabinet_door = Door("cabinet door", thing_behind_door=cabinet, key=cabinet_key)
+    room_2_key = Key("assembled room 2 key", parts=key_tines + scents + [key_handle])
     room_2_door = Door("door to room 2 - door with keyhole",
-                       space=room_2,
+                       thing_behind_door=room_2,
                        key=room_2_key,
-                       key_test=lambda k: room_2_key in k.contents and key_handle in k.contents)
-    # TODO: add 3 other perfume bottles hidden around room 1
-    room_1 = Room("Room 1 - storefront", contents=[room_2_door, chair, counter, cabinet_door, cabinet_key])
+                       key_test=lambda k: room_2_key in k.parts and key_handle in k.parts)
+
+    # Bottle 1 in chest on counter
+    chest_with_drawers = PhysicalThing("chest with drawers", contents=perfume_bottles[1])
+    perfume_tray = PhysicalThing("perfume tray")
+    counter = PhysicalThing("counter", contents=[perfume_tray, chest_with_drawers])
+
+    room_1 = Room("Room 1 - storefront", contents=[room_2_door, chair, counter, cabinet_door, cabinet_key] + perfume_bottles[1:])
     return room_1
+
 
 def play_escape_room_example(room):
     print("\nPlaying our example escape room...")
