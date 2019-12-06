@@ -16,7 +16,7 @@ class Thing:
     Thing. Things can represent non-physical items (information) or physical items, like a lock,
     key, chair, etc.
 
-    This is intended to be a logical thing, which is more general than a strict 3D Euclidean thing,
+    This is intended to be similar to a logical space, which is more general than a strict 3D Euclidean thing,
     but should suffice to represent physical thing and its contents, in that it can both
     represent and contain physical things.
 
