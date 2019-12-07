@@ -1,4 +1,4 @@
-# Imperative implementation of the puzzle game called Jumpin'In(TM).
+# Imperative implementation of the puzzle game called Jump In(TM) -- https://www.smartgames.eu/uk/one-player-games/jumpin.
 # Authors: Rob C and Andy K
 # We had tried a recursive solution but it was a bit harder to debug
 # --
